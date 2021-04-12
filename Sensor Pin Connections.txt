@@ -1,0 +1,26 @@
+Format:
+Sensor Pin : Arduino Pin (Pin #)
+
+RAINDROP SENSOR CONNECTIONS:
+D0  : D3 (Pin 6)
+A0  : NC
+VCC : +3.3V (Pin 17)
+GND : GND (Pin 29)
+
+
+DHT22 SENSOR CONNECTIONS:
++   : +3.3V (Pin 17)
+Out : D2 (Pin 5)
+-   : GND (Pin 29)
+
+
+BMP180 SENSOR CONNECTIONS:
+Vin : +3.3V (Pin 17)
+GND : GND (Pin 29)
+SCL : SCL (Pin 24)
+SDA : SDA (Pin 23)
+
+OLED CONNECTIONS:
+GND : GND (Pin 29)
+SCL : SCL (Pin 24)
+SDA : SDA (Pin 23)

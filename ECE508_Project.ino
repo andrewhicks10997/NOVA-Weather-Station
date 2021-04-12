@@ -35,13 +35,6 @@
 
 /*********Setting up the Barometer***************/
 Adafruit_BMP085 bmp; //Using the BMP180, but this will still work
-  
-void setup() {
-  Serial.begin(9600);
-  if (!bmp.begin()) {
-  Serial.println("Could not find a valid BMP180 sensor, check wiring!");
-  }
-}
 
 /*********Setting up the Temp Sensor (DHT22)***************/
 #include <SimpleDHT.h> // headers for DHT_22
@@ -52,11 +45,24 @@ float temperature = 0;
 float humidity = 0;
 int errDHT22 = SimpleDHTErrSuccess;
 
+/*********Setting up the Raindrop Sensor***************/
+int inputPinRain = 3;
+int valRain = 0;                    // variable for reading the pin status
+  
+void setup() {
+  Serial.begin(9600);
+  if (!bmp.begin()) {
+  Serial.println("Could not find a valid BMP180 sensor, check wiring!");
+  }
+}
+
+
 
 void loop() {
   get_BMP180_Values(); //Function call for Barometer
   delay(500);
   get_DHT22_Values(); //Function call for DHT22
+  get_rain_status();
 }
 
    
@@ -110,3 +116,17 @@ void get_DHT22_Values(){
   
   
   }
+  
+void get_rain_status(){
+  valRain = digitalRead(inputPinRain);
+  Serial.println("RAINDROP SENSOR INFO");
+  if (valRain == HIGH) {            // check if the input is HIGH
+
+  Serial.println("NO RAIN");   
+  } 
+    else{
+
+    Serial.println("It is Raining");    
+  }
+  Serial.println();
+  }  
