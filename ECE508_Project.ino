@@ -8,24 +8,12 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <EMailSender.h>
+#include <WiFiNINA.h>
+#include "NETWORK_INFO.h"
 
 #include <Adafruit_BMP085.h> //Library for BMP180 (Need to download zip file from here: https://github.com/adafruit/Adafruit-BMP085-Library)
 
-/*************************************************** 
-  This is an example for the BMP085 Barometric Pressure & Temp Sensor
-
-  Designed specifically to work with the Adafruit BMP085 Breakout 
-  ----> https://www.adafruit.com/products/391
-
-  These pressure and temperature sensors use I2C to communicate, 2 pins
-  are required to interface
-  Adafruit invests time and resources providing this open source code, 
-  please support Adafruit and open-source hardware by purchasing 
-  products from Adafruit!
-
-  Written by Limor Fried/Ladyada for Adafruit Industries.  
-  BSD license, all text above must be included in any redistribution
- ****************************************************/
 
 // Connect VCC of the BMP085 sensor to 3.3V (NOT 5.0V!)
 // Connect GND to Ground
@@ -38,19 +26,33 @@ Adafruit_BMP085 bmp; //Using the BMP180, but this will still work
 
 /*********Setting up the Temp Sensor (DHT22)***************/
 #include <SimpleDHT.h> // headers for DHT_22
-
 int pinDHT22 = 2; //setting pin D2 for sensor
 SimpleDHT22 dht22(pinDHT22);
 float temperature = 0;
 float humidity = 0;
 int errDHT22 = SimpleDHTErrSuccess;
 
+
+/*********Setting up the Email Functions***************/
+EMailSender emailSend("NOVAWeatherStation@gmail.com", "ECE508IoTWeatherStation123!");     //signing into client email (address and password)
+uint8_t connection_state = 0;
+uint16_t reconnect_interval = 10000;
+#define EmailRecipients {"EnterEmailAddressHere@gmail.com", "CanContinueWithMoreAddressesOnList@hotmail.com"}
+#define RecipientsSize 2          //length of EmailRecipient Array
+
 /*********Setting up the Raindrop Sensor***************/
 int inputPinRain = 3;
 int valRain = 0;                    // variable for reading the pin status
+
+/*********Setting up the UDFsr***************/
+uint8_t WiFiConnect(const char* nSSID, const char* nPassword);
+void Awaits();
+void SendEmailAlert(char subject[], char contents[]);
+
   
 void setup() {
   Serial.begin(9600);
+  SendEmailAlert("testing", "testing123");
   if (!bmp.begin()) {
   Serial.println("Could not find a valid BMP180 sensor, check wiring!");
   }
@@ -130,3 +132,79 @@ void get_rain_status(){
   }
   Serial.println();
   }  
+
+  void SendEmailAlert(char subject[], char contents[])
+{
+    const char* ssid = NETWORK_SSID;
+    const char* password = NETWORK_PSA;
+
+    connection_state = WiFiConnect(ssid, password);
+    if(!connection_state)  // if not connected to WIFI
+        Awaits();          // constantly trying to connect
+
+    EMailSender::EMailMessage message;
+    message.subject = String(subject);
+    message.message = String(contents);
+
+    // Send to email list
+    const char* arrayOfEmail[] = EmailRecipients;
+    EMailSender::Response resp = emailSend.send(arrayOfEmail, RecipientsSize, message);
+
+//    // Send to 3 different email, 2 in C and 1 in CC
+//    const char* arrayOfEmail[] = {"<FIRST>@gmail.com", "<SECOND>@yahoo.com", "<THIRD>@hotmail.com"};
+//    EMailSender::Response resp = emailSend.send(arrayOfEmail, 2, 1, message);
+//
+//    // Send to 3 different email first to C second to CC and third to CCn
+//    const char* arrayOfEmail[] = {"<FIRST>@gmail.com", "<SECOND>@yahoo.com", "<THIRD>@hotmail.com"};
+//    EMailSender::Response resp = emailSend.send(arrayOfEmail, 1,1,1, message);
+
+
+    Serial.println("Sending status: ");
+
+    Serial.println(resp.status);
+    Serial.println(resp.code);
+    Serial.println(resp.desc);
+}
+
+uint8_t WiFiConnect(const char* nSSID = nullptr, const char* nPassword = nullptr)
+{
+    static uint16_t attempt = 0;
+    Serial.print("Connecting to ");
+    if(nSSID) {
+        WiFi.begin(nSSID, nPassword);
+        Serial.println(nSSID);
+    }
+
+    uint8_t i = 0;
+    while(WiFi.status()!= WL_CONNECTED && i++ < 50)
+    {
+        delay(200);
+        Serial.print(".");
+    }
+    ++attempt;
+    Serial.println("");
+    if(i == 51) {
+        Serial.print("Connection: TIMEOUT on attempt: ");
+        Serial.println(attempt);
+        if(attempt % 2 == 0)
+            Serial.println("Check if access point available or SSID and Password\r\n");
+        return false;
+    }
+    Serial.println("Connection: ESTABLISHED");
+    Serial.print("Got IP address: ");
+    Serial.println(WiFi.localIP());
+    return true;
+}
+
+void Awaits()
+{
+    uint32_t ts = millis();
+    while(!connection_state)
+    {
+        delay(50);
+        if(millis() > (ts + reconnect_interval) && !connection_state){
+            connection_state = WiFiConnect();
+            ts = millis();
+        }
+    }
+}
