@@ -24,3 +24,9 @@ OLED CONNECTIONS:
 GND : GND (Pin 29)
 SCL : SCL (Pin 24)
 SDA : SDA (Pin 23)
+
+GPS BN-220 GPS:
+GPS GND : Arduino GND (Pin 29)
+GPS Tx  : Arduino Rx (Pin 2)
+GPS Rx  : Arduino Tx (Pin 1)
+GPS PWR : Arduino 5V pin (Pin 27)
