@@ -20,9 +20,19 @@
 // Connect SCL to i2c clock - on '168/'328 Arduino Uno/Duemilanove/etc thats Analog 5
 // Connect SDA to i2c data - on '168/'328 Arduino Uno/Duemilanove/etc thats Analog 4
 
+/**************setting up the OLED******/
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 myOled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+char lcdBuffer[20];
+String oledline[9];
 
 /*********Setting up the Barometer***************/
 Adafruit_BMP085 bmp; //Using the BMP180, but this will still work
+float pressure = 0;
 
 /*********Setting up the Temp Sensor (DHT22)***************/
 #include <SimpleDHT.h> // headers for DHT_22
@@ -51,6 +61,16 @@ void SendEmailAlert(char subject[], char contents[]);
 
   
 void setup() {
+  // Make sure to use the correct I2C address. Address 0x3C for 128x64
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!myOled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+    Serial.println("SSD1306 allocation failed");
+    for(;;); // Don't proceed, loop forever
+  }
+
+  oledline[1] = "ECE508 Midterm";
+  int jj; for (jj=2; jj<=8; jj++){ oledline[jj]=""; }
+  
   Serial.begin(9600);
   SendEmailAlert("testing", "testing123");
   if (!bmp.begin()) {
@@ -62,15 +82,17 @@ void setup() {
 
 void loop() {
   get_BMP180_Values(); //Function call for Barometer
-  delay(500);
   get_DHT22_Values(); //Function call for DHT22
   get_rain_status();
+  displayTextOLED(oledline);
+  delay(1000);
 }
 
    
 
-void get_BMP180_Values(){
-
+int get_BMP180_Values(){
+	pressure = 0.0002953*bmp.readPressure();
+	
     Serial.println("BMP180 INFO: ");
     Serial.print("Temperature = ");
     Serial.print(bmp.readTemperature());
@@ -99,10 +121,10 @@ void get_BMP180_Values(){
     Serial.println(" meters");
     
     Serial.println();
-    delay(500);
+  sprintf(lcdBuffer, "Pressure %.1f ", (float)pressure); oledline[3] = lcdBuffer; // Displays RH on OLED line 5
 }
 
-void get_DHT22_Values(){
+int get_DHT22_Values(){
   errDHT22 = dht22.read2(&temperature, &humidity, NULL);
   if (errDHT22 != 0) {
     temperature = (-1 - 32)/1.8;
@@ -114,21 +136,23 @@ void get_DHT22_Values(){
   Serial.print("Humidity in RH%: ");
   Serial.println(humidity);
   Serial.println();
-  delay(500);
-  
+  sprintf(lcdBuffer, "Temp in C: %.1f", (float)temperature); oledline[4] = lcdBuffer; // Display temperature in degress C on OLED line 4
+  sprintf(lcdBuffer, "Humidity in RH%% %.1f ", (float)humidity); oledline[5] = lcdBuffer; // Displays RH on OLED line 5  
   
   }
   
-void get_rain_status(){
+int get_rain_status(){
   valRain = digitalRead(inputPinRain);
   Serial.println("RAINDROP SENSOR INFO");
   if (valRain == HIGH) {            // check if the input is HIGH
 
-  Serial.println("NO RAIN");   
+  Serial.println("NO RAIN");
+  oledline[6] = "NO RAIN";  
   } 
     else{
 
-    Serial.println("It is Raining");    
+    Serial.println("It is Raining"); 
+    oledline[6] = "RAIN";	
   }
   Serial.println();
   }  
@@ -207,4 +231,18 @@ void Awaits()
             ts = millis();
         }
     }
+}
+
+void displayTextOLED(String oledline[]) {
+  int jj;
+  myOled.clearDisplay();
+  myOled.setTextSize(1);
+  myOled.setTextColor(SSD1306_WHITE);
+  myOled.setCursor(0, 0);
+
+  for (jj=1; jj<=8; jj++) { 
+    myOled.println(oledline[jj]);
+    }
+  
+  myOled.display();  
 }
