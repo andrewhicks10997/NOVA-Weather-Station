@@ -10,10 +10,12 @@
 #include <Adafruit_SSD1306.h>
 #include <EMailSender.h>
 #include <WiFiNINA.h>
+#include <TinyGPS++.h>
+#include <Adafruit_GFX.h>               //header file for OLED graphics
+#include <Adafruit_SSD1306.h>           //header file for OLED graphics
 #include "NETWORK_INFO.h"
 
 #include <Adafruit_BMP085.h> //Library for BMP180 (Need to download zip file from here: https://github.com/adafruit/Adafruit-BMP085-Library)
-
 
 // Connect VCC of the BMP085 sensor to 3.3V (NOT 5.0V!)
 // Connect GND to Ground
@@ -23,6 +25,11 @@
 
 /*********Setting up the Barometer***************/
 Adafruit_BMP085 bmp; //Using the BMP180, but this will still work
+int Pressure = 0;
+int Altitude = 0;
+
+/*********Setting up the GPS Module***************/
+TinyGPSPlus gps;
 
 /*********Setting up the Temp Sensor (DHT22)***************/
 #include <SimpleDHT.h> // headers for DHT_22
@@ -41,6 +48,13 @@ uint16_t reconnect_interval = 10000;
 /*********Setting up the Raindrop Sensor***************/
 int inputPinRain = 3;
 int valRain = 0;                    // variable for reading the pin status
+
+/*********Setting up the OLED display***************/
+#define SCREEN_WIDTH 128                    //OLED display width in pixels
+#define SCREEN_HEIGHT 64                    //OLED display height in pixels
+#define OLED_RESET 4                        //Reset pin for OLED
+String oledline[9];                           //line of strings written to  
+Adafruit_SSD1306 myOled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);      //initialize class for OLED
 
 /*********************Setting up calculated values*****************************/
 float Tdew = 0;
@@ -61,6 +75,8 @@ int samples = 0;
 void get_BMP180_Values(void);
 void get_DHT22_Values(void);
 void get_rain_status(void);
+void updateOLED(void);
+void displayTextOLED(String oledline[]);
 uint8_t WiFiConnect(const char* nSSID, const char* nPassword);
 void Awaits();
 void SendEmailAlert(char subject[], char contents[]);
@@ -78,6 +94,11 @@ void setup() {
   {
     Serial.println("Could not find a valid BMP180 sensor, check wiring!");
   }
+
+  if(!myOled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+    Serial.println("SSD1306 allocation failed");
+    for(;;); // Don't proceed, loop forever
+  }
 }
 
 
@@ -92,6 +113,8 @@ void loop()
   delay(500);
   Calc_and_Analysis();
   delay(500);
+  updateOLED();
+  delay(500);
 }
 
    
@@ -103,9 +126,10 @@ void get_BMP180_Values(void)
     Serial.print("Temperature = ");
     Serial.print(bmp.readTemperature());
     Serial.println(" *C");
-    
+
+    Pressure = bmp.readPressure();
     Serial.print("Pressure = ");
-    Serial.print(bmp.readPressure());
+    Serial.print(String(Pressure));
     Serial.println(" Pa");
     
     // Calculate altitude assuming 'standard' barometric
@@ -122,8 +146,9 @@ void get_BMP180_Values(void)
   // if you know the current sea level pressure which will
   // vary with weather and such. If it is 1015 millibars
   // that is equal to 101500 Pascals.
+  Altitude =  bmp.readAltitude(101500);
     Serial.print("Real altitude = ");
-    Serial.print(bmp.readAltitude(101500));
+    Serial.print(String(Altitude));
     Serial.println(" meters");
     
     Serial.println();
@@ -165,6 +190,56 @@ void get_rain_status(void)
   Serial.println();
 }  
 
+/*----------------------------------------------------GPS initialization UDF---------------------------------------------------------*/
+
+/*----------------------------------------------------GPS Sensor UDF---------------------------------------------------------*/
+
+/*----------------------------------------------------Update OLED UDF---------------------------------------------------------*/
+void updateOLED(void)
+{
+  //update the OLED screen
+  oledline[1] = "NOVA Weather Station";
+  oledline[2] = "Temp: " + String(temperature) + " C"; 
+  oledline[3] = "Hum in RH%: " + String(humidity);
+  oledline[4] = "Pressure: " + String(Pressure) + " Pa";
+  oledline[5] = "Altitude: " + String(Altitude) + " m";
+  oledline[6] = "Heat Index: " + String(HeatIndex) + " C";
+  if (fog == 1)
+  {
+    oledline[7] = "Foggy"; 
+  }
+  else
+  {
+    oledline[7] = "No Fog";
+  }
+  if (valRain == 1)
+  {
+    oledline[8] = "No Rain";
+  }
+  else
+  {
+    oledline[8] = "Raining";
+  }
+  
+  //display string array to OLED
+  displayTextOLED(oledline);
+}
+
+/*----------------------------------------------------display text to OLED UDF---------------------------------------------------------*/
+void displayTextOLED(String oledline[])
+{
+  int jj;
+  myOled.clearDisplay();
+  myOled.setTextSize(1);
+  myOled.setTextColor(SSD1306_WHITE);
+  myOled.setCursor(0, 0);
+
+  for (jj=1; jj<=8; jj++) { 
+    myOled.println(oledline[jj]);
+    }
+  
+  myOled.display();  
+}
 /*-----------------------------------------------------------Email Tx UDF----------------------------------------------------------*/  
 void SendEmailAlert(char subject[], char contents[])
 {
@@ -239,6 +314,9 @@ void Awaits()
 
 void Calc_and_Analysis(void)
 {
+  //print to user which section this comes from
+  Serial.println("CALCULATED INFO");
+  
   //get fog and dew point temperature 
   FogStatus();
 
@@ -267,7 +345,7 @@ void FogStatus(void)
   }
 }
 
-/*-----------------------------------Send Weather Updates UDF-----------------------------*/  
+/*-----------------------------------Calculate Heat Index UDF-----------------------------*/  
 void CalcHeatIndex(void)
 {
   //get initial values
