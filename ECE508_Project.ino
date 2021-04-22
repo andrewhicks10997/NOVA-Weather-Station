@@ -37,39 +37,67 @@ int errDHT22 = SimpleDHTErrSuccess;
 EMailSender emailSend("NOVAWeatherStation@gmail.com", "ECE508IoTWeatherStation123!");     //signing into client email (address and password)
 uint8_t connection_state = 0;
 uint16_t reconnect_interval = 10000;
-#define EmailRecipients {"EnterEmailAddressHere@gmail.com", "CanContinueWithMoreAddressesOnList@hotmail.com"}
-#define RecipientsSize 2          //length of EmailRecipient Array
 
 /*********Setting up the Raindrop Sensor***************/
 int inputPinRain = 3;
 int valRain = 0;                    // variable for reading the pin status
 
-/*********Setting up the UDFsr***************/
+/*********************Setting up calculated values*****************************/
+float Tdew = 0;
+int fog = 0;    //bool for fog status (0 = no fog, 1 = fog)
+float HeatIndex = 0;
+
+/*********************Setting up status flags for calculated values*****************************/
+int HeatFlag = 0; 
+int FreezeFlag = 0;
+int ExtremeColdFlag = 0;
+int FogFlag = 0;
+int RainFlag = 0;
+int RainStat[] = {0,0,0,0,0};
+int FogStat[] = {0,0,0,0,0};
+int samples = 0;
+
+/*********Setting up the UDFs***************/
+void get_BMP180_Values(void);
+void get_DHT22_Values(void);
+void get_rain_status(void);
 uint8_t WiFiConnect(const char* nSSID, const char* nPassword);
 void Awaits();
 void SendEmailAlert(char subject[], char contents[]);
+void Calc_and_Analysis(void);
+void FogStatus(void);
+void CalcHeatIndex(void);
+void WeatherAlert(void);
 
-  
+/*---------------------------------------------------------------SETUP FUNCTION-----------------------------------------------------*/  
 void setup() {
   Serial.begin(9600);
-  SendEmailAlert("testing", "testing123");
-  if (!bmp.begin()) {
-  Serial.println("Could not find a valid BMP180 sensor, check wiring!");
+
+  //begin using the bmp module
+  if (!bmp.begin()) 
+  {
+    Serial.println("Could not find a valid BMP180 sensor, check wiring!");
   }
 }
 
 
-
-void loop() {
+/*--------------------------------------------------------LOOP FUNCTION------------------------------------------------------------------*/  
+void loop() 
+{
   get_BMP180_Values(); //Function call for Barometer
   delay(500);
   get_DHT22_Values(); //Function call for DHT22
+  delay(500);
   get_rain_status();
+  delay(500);
+  Calc_and_Analysis();
+  delay(500);
 }
 
    
-
-void get_BMP180_Values(){
+/*-----------------------------------------------------------BMP180 UDF----------------------------------------------------------*/
+void get_BMP180_Values(void)
+{
 
     Serial.println("BMP180 INFO: ");
     Serial.print("Temperature = ");
@@ -102,7 +130,9 @@ void get_BMP180_Values(){
     delay(500);
 }
 
-void get_DHT22_Values(){
+/*----------------------------------------------------------DHT22 UDF----------------------------------------------------*/  
+void get_DHT22_Values(void)
+{
   errDHT22 = dht22.read2(&temperature, &humidity, NULL);
   if (errDHT22 != 0) {
     temperature = (-1 - 32)/1.8;
@@ -118,8 +148,10 @@ void get_DHT22_Values(){
   
   
   }
-  
-void get_rain_status(){
+
+/*----------------------------------------------------Raindrop Sensor UDF---------------------------------------------------------*/  
+void get_rain_status(void)
+{
   valRain = digitalRead(inputPinRain);
   Serial.println("RAINDROP SENSOR INFO");
   if (valRain == HIGH) {            // check if the input is HIGH
@@ -131,9 +163,10 @@ void get_rain_status(){
     Serial.println("It is Raining");    
   }
   Serial.println();
-  }  
+}  
 
-  void SendEmailAlert(char subject[], char contents[])
+/*-----------------------------------------------------------Email Tx UDF----------------------------------------------------------*/  
+void SendEmailAlert(char subject[], char contents[])
 {
     const char* ssid = NETWORK_SSID;
     const char* password = NETWORK_PSA;
@@ -150,15 +183,6 @@ void get_rain_status(){
     const char* arrayOfEmail[] = EmailRecipients;
     EMailSender::Response resp = emailSend.send(arrayOfEmail, RecipientsSize, message);
 
-//    // Send to 3 different email, 2 in C and 1 in CC
-//    const char* arrayOfEmail[] = {"<FIRST>@gmail.com", "<SECOND>@yahoo.com", "<THIRD>@hotmail.com"};
-//    EMailSender::Response resp = emailSend.send(arrayOfEmail, 2, 1, message);
-//
-//    // Send to 3 different email first to C second to CC and third to CCn
-//    const char* arrayOfEmail[] = {"<FIRST>@gmail.com", "<SECOND>@yahoo.com", "<THIRD>@hotmail.com"};
-//    EMailSender::Response resp = emailSend.send(arrayOfEmail, 1,1,1, message);
-
-
     Serial.println("Sending status: ");
 
     Serial.println(resp.status);
@@ -166,6 +190,7 @@ void get_rain_status(){
     Serial.println(resp.desc);
 }
 
+/*------------------------------------------------------WiFi Connect UDF------------------------------------------------*/  
 uint8_t WiFiConnect(const char* nSSID = nullptr, const char* nPassword = nullptr)
 {
     static uint16_t attempt = 0;
@@ -196,6 +221,7 @@ uint8_t WiFiConnect(const char* nSSID = nullptr, const char* nPassword = nullptr
     return true;
 }
 
+/*-----------------------------------WiFi Connection sub UDF-----------------------------*/  
 void Awaits()
 {
     uint32_t ts = millis();
@@ -207,4 +233,206 @@ void Awaits()
             ts = millis();
         }
     }
+}
+
+/*-----------------------------------Analysis of Calculations UDF-----------------------------*/  
+
+void Calc_and_Analysis(void)
+{
+  //get fog and dew point temperature 
+  FogStatus();
+
+  //calculate heat index
+  CalcHeatIndex();
+
+  //output line for spacing 
+  Serial.println(" ");
+
+  //alert user if there are any changes
+  WeatherAlert();
+}
+
+/*-----------------------------------Calculate Fog and Dew Point UDF-----------------------------*/  
+void FogStatus(void)
+{
+  Tdew = temperature-((100-humidity)/5); 
+  Serial.println("Dew Point Temperature: " + String(Tdew)+ " C");
+  if ((temperature <= Tdew+2.5) && (temperature >= Tdew-2.5))
+  {
+    Serial.println("Fog Detected");
+  }
+  else
+  {
+    Serial.println("No Fog Detected");
+  }
+}
+
+/*-----------------------------------Send Weather Updates UDF-----------------------------*/  
+void CalcHeatIndex(void)
+{
+  //get initial values
+  float tempInF = (temperature*1.8)+32;
+  float c[] = {-42.379, 2.04901523, 10.14333127,-0.22475541, -0.00683783, -0.05481717, 0.00122874, 0.00085282, -0.00000199};
+  float tempSquared = tempInF*tempInF;
+  float humSquared = humidity*humidity;
+  float HeatIndexInF = 0;
+
+  //calculate Head Index in F
+  HeatIndexInF = c[0] + (c[1]*tempInF) + (c[2]*humidity) + (c[3]*tempInF*humidity) + (c[4]*tempSquared) + (c[5]*humSquared) + (c[6]*tempSquared*humidity) + (c[7]*tempInF*humSquared) + (c[8]*tempSquared*humSquared);
+
+  //convert F to C
+  HeatIndex = ((HeatIndexInF-32)*5)/9;
+
+  Serial.println("Heat Index: "+String(HeatIndex)+" C");
+}
+
+
+/*-----------------------------------Send Weather Updates UDF-----------------------------*/  
+void WeatherAlert(void)
+{
+  //increment samples (to verify if we have enough samples to average or not)
+  if (samples <=5)
+  {
+    samples++;
+  }
+  
+  //add to rain and fog averages
+  int i = 0; 
+
+  //append new value to array
+  for (i = 4; i >= 0; i--)
+  {
+    //if this is the first value, add newly recorded value
+    if (i == 0)
+    {
+      FogStat[i] = fog;
+      RainStat[i] = valRain;
+    }
+
+    //otherwise, shift current position back
+    else 
+    {
+      //shift one element up
+       FogStat[i] = FogStat[i-1];
+       RainStat[i] = RainStat[i-1];
+    }
+  }
+
+  //initialize variables
+  int FogAvg = 0, RainAvg = 0, FogCount = 0, RainCount = 0;
+
+  //if we have taken at least 5 samples
+  if (samples >= 5)
+  {
+    //sum the values
+    for (i = 0; i < 4; i++)
+    {
+      if (FogStat[i] == 1)
+      {
+        FogCount++;
+      }
+      if (RainStat[i] == 1)
+      {
+        RainCount++;
+      }
+    }
+    
+    //determine output value via majority wins
+    if (RainCount >=3)          //rain value
+    {
+      RainAvg = 1;
+    }
+    else
+    {
+      RainAvg = 0;
+    }
+    if (FogCount >= 3)        //fog value
+    {
+      FogAvg = 1;
+    }
+    else
+    {
+      FogAvg = 0;
+    }
+  }
+
+  //if 5 samples have not been taken yet, just assign the newly recorded value
+  else
+  {
+    RainAvg = valRain; 
+    FogAvg = fog;
+  }
+
+  /*--flags implemented to avoid sending the same email every iteration --*/
+  
+  //check for fog
+  if ((FogAvg == 1) && (FogFlag == 0))
+  {
+    SendEmailAlert("WEATHER ALERT: FOG", "Fog has been detected within your area. Due to thsi fog, there is limited visibility. Drive with caution!"); 
+    FogFlag = 1;
+    delay(10000);
+  }
+
+  //check for rain 
+  if ((RainAvg == 0) && (RainFlag == 0))
+  { 
+    SendEmailAlert("WEATHER ALERT: RAIN", "Rain has been detected. Bring an umbrella!");
+    RainFlag = 1;
+    delay(10000);
+  }
+  
+  //check for extreme heat 
+  if (((temperature >= 37.78) || (HeatIndex >= 40)) && (HeatFlag == 0))
+  {
+    char emailTxString[200];
+    sprintf(emailTxString, "Dangerously hot temperature of %0.2f C with a heat index of %0.2f C. Stay indoors and drink plenty of water.", temperature, HeatIndex);
+    SendEmailAlert("WEATHER ALERT: EXTREME HEAT", emailTxString);
+    HeatFlag = 1;
+    delay(10000);
+  }
+
+  //check to see if freezing 
+  if ((temperature <= 0) && (FreezeFlag == 0))
+  {
+    SendEmailAlert("WEATHER ALERT: BELOW FREEZING", "Temperature is at or below freezing. Ice is possible. Drive with caution!");
+    FreezeFlag = 1;
+    delay(10000);
+  }
+
+  //check for extreme cold 
+  if ((temperature <= -17.778) && (ExtremeColdFlag == 0))
+  {
+    char emailTxCold[100];
+    sprintf(emailTxCold, "Extreme cold! Temperature is at %0.2f C! Stay indoors, and bring animals inside!", temperature);
+    SendEmailAlert("WEATHER ALERT: EXTREME COLD", emailTxCold);
+    ExtremeColdFlag = 1;
+    delay(10000);
+  }
+
+  //clear flags if possible 
+  if (temperature >= 2)                                   //freeze flag
+  {
+    FreezeFlag = 0;
+  }
+  if (temperature >= -15)                                 //extreme cold flag
+  {
+    ExtremeColdFlag = 0;
+  }
+  if ((temperature <= 35) && (HeatIndex <= 38))            //extreme heat flag        
+  {
+    HeatFlag = 0;
+  }
+  if (FogAvg == 0)                                        //fog flag
+  {
+    FogFlag = 0;
+  }
+  if (RainAvg == 1)                                       //rain flag
+  {
+    RainFlag = 0;
+  }
+
+
+  //if end of the day, print to user
+  
+  
 }
