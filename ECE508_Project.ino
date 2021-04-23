@@ -3,19 +3,17 @@
  Group 8 - Weather Station
  Modules Used - BMP180, Raindrop Sensor, DHT22, BN-220(GPS), OLED
  **************************************************************************/
-
-#include <SPI.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <EMailSender.h>
-#include <WiFiNINA.h>
-#include <TinyGPS++.h>
+#include <SPI.h>                        //SPI communication library
+#include <Wire.h>                       //I2C communication library
+#include <Adafruit_BMP085.h>            //Library for BMP180 (Need to download zip file from here: https://github.com/adafruit/Adafruit-BMP085-Library)
+#include <TinyGPS++.h>                  //library for GPS
 #include <Adafruit_GFX.h>               //header file for OLED graphics
 #include <Adafruit_SSD1306.h>           //header file for OLED graphics
-#include "NETWORK_INFO.h"
-
-#include <Adafruit_BMP085.h> //Library for BMP180 (Need to download zip file from here: https://github.com/adafruit/Adafruit-BMP085-Library)
+#include <time.h>                       //library for time functions
+#include <EMailSender.h>                //library for SMTP communication
+#include <WiFiNINA.h>                   //library for WiFi connectivity
+#include "Firebase_Arduino_WiFiNINA.h"  //library for Firebase 
+#include "SETUP_INFO.h"               //setup header file 
 
 // Connect VCC of the BMP085 sensor to 3.3V (NOT 5.0V!)
 // Connect GND to Ground
@@ -39,6 +37,18 @@ float temperature = 0;
 float humidity = 0;
 int errDHT22 = SimpleDHTErrSuccess;
 
+/************Setup FireBase****************************/
+FirebaseData firebaseData;
+FirebaseData ledData;
+int n = 1;
+char currentTimeET[20];
+unsigned long currMillis;
+String stringOne;
+String path = FirebasePath;
+
+/*_____________Setup Time Functionality*****************/
+int dd, hh, mm, ss;
+unsigned long currSeconds;
 
 /*********Setting up the Email Functions***************/
 EMailSender emailSend("NOVAWeatherStation@gmail.com", "ECE508IoTWeatherStation123!");     //signing into client email (address and password)
@@ -72,23 +82,34 @@ int FogStat[] = {0,0,0,0,0};
 int samples = 0;
 
 /*********Setting up the UDFs***************/
-void get_BMP180_Values(void);
-void get_DHT22_Values(void);
-void get_rain_status(void);
-void updateOLED(void);
-void displayTextOLED(String oledline[]);
-uint8_t WiFiConnect(const char* nSSID, const char* nPassword);
-void Awaits();
-void SendEmailAlert(char subject[], char contents[]);
-void Calc_and_Analysis(void);
-void FogStatus(void);
-void CalcHeatIndex(void);
-void WeatherAlert(void);
+void get_BMP180_Values(void);                                     //BMP180 Sensor Read
+void get_DHT22_Values(void);                                      //DHT22 Sensor Read
+void get_rain_status(void);                                       //Raindrop Sensor Read
+void updateOLED(void);                                            //Update OLED with new Data
+void displayTextOLED(String oledline[]);                          //writes values to OLED
+uint8_t WiFiConnect(const char* nSSID, const char* nPassword);    //connects to WiFi
+void Awaits();                                                    //timeout functionality for network connectivity
+void SendEmailAlert(char subject[], char contents[]);             //sends email with specified inputs
+void Calc_and_Analysis(void);                                     //calculates averages of values and analyzes them (determines if the user should be emailed)
+void FogStatus(void);                                             //returns if there is fog and the dew point temperature
+void CalcHeatIndex(void);                                         //calculates the heat index
+void WeatherAlert(void);                                          //Determines if there is a weather alert
+void ConnectFirebase(void);                                       //connects to Google Firebase
+void OffloadToFirebase(void);                                     //Offloads current data to Firebase
+void sensorDHT22Update(int n);                                    //updated DHT22 data to firebase
+void sensorBMP085Update(int n);                                   //updated BMP085 data to firebase
+void sensorRainUpdate(char* r);                                   //updated Raindrop sensor value
+void avgTempfun(void);                                            //averages temperatures recorded and sends to firebase
+void avgHumfun(void);                                             //averages humidity recorded and sends to firebase
+void avgPressfun(void);                                           //averages pressure recorded and sends to firebase
 
 /*---------------------------------------------------------------SETUP FUNCTION-----------------------------------------------------*/  
 void setup() {
   Serial.begin(9600);
 
+  //connect to the firebase
+  ConnectFirebase();
+  
   //begin using the bmp module
   if (!bmp.begin()) 
   {
@@ -115,6 +136,8 @@ void loop()
   delay(500);
   updateOLED();
   delay(500);
+  OffloadToFirebase();
+  delay(500);
 }
 
    
@@ -133,7 +156,7 @@ void get_BMP180_Values(void)
     Serial.println(" Pa");
     
     // Calculate altitude assuming 'standard' barometric
-    // pressure of 1013.25 millibar = 101325 Pascal
+    // Pressure of 1013.25 millibar = 101325 Pascal
     Serial.print("Altitude = ");
     Serial.print(bmp.readAltitude());
     Serial.println(" meters");
@@ -143,7 +166,7 @@ void get_BMP180_Values(void)
     Serial.println(" Pa");
 
   // you can get a more precise measurement of altitude
-  // if you know the current sea level pressure which will
+  // if you know the current sea level Pressure which will
   // vary with weather and such. If it is 1015 millibars
   // that is equal to 101500 Pascals.
   Altitude =  bmp.readAltitude(101500);
@@ -513,4 +536,221 @@ void WeatherAlert(void)
   //if end of the day, print to user
   
   
+}
+
+/*------------------------------------------------------Firebase Connection UDF----------------------------------*/
+void ConnectFirebase(void)
+{
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH, NETWORK_SSID, NETWORK_PSA);
+  Firebase.reconnectWiFi(true);
+}
+
+/*------------------------------------------------------Firebase data offload UDF----------------------------------*/
+void OffloadToFirebase(void) 
+{
+  sensorDHT22Update(n);
+  sensorBMP085Update(n);
+
+  currSeconds = WiFi.getTime();
+  convCurrentTimeET(currSeconds, currentTimeET);
+
+  sensorRainUpdate(currentTimeET);
+
+  if (n<=10)
+  {
+     n++;
+  }
+  else
+  {
+      avgTempfun();
+      avgHumfun();
+      avgPressfun();
+      n=1;
+  }
+}
+
+/*------------------------------------------------------Update DHT22 data UDF----------------------------------*/
+void sensorDHT22Update(int n)
+{
+    if (Firebase.setInt(firebaseData, path + "/temperature/temp" + (n), temperature))
+    {
+      Serial.println("PASSED");
+      Serial.println("PATH: " + firebaseData.dataPath());
+      Serial.println("TYPE: " + firebaseData.dataType());
+      Serial.println("------------------------------------");
+      Serial.println();
+    }
+    else
+    {
+      Serial.println("FAILED");
+      Serial.println("REASON: " + firebaseData.errorReason());
+      Serial.println("------------------------------------");
+      Serial.println();
+    }
+  
+
+  if (Firebase.setInt(firebaseData, path+ "/humidity/hum"+(n), humidity))
+  {
+    Serial.println("PASSED");
+    Serial.println("PATH: " + firebaseData.dataPath());
+    Serial.println("TYPE: " + firebaseData.dataType());
+    Serial.println("------------------------------------");
+    Serial.println();
+  }
+  else
+  {
+    Serial.println("FAILED");
+    Serial.println("REASON: " + firebaseData.errorReason());
+    Serial.println("------------------------------------");
+    Serial.println();
+  }
+}
+
+/*------------------------------------------------------Update BMP085 data UDF----------------------------------*/
+void sensorBMP085Update(int n)
+{
+    if (Firebase.setInt(firebaseData, path+ "/Pressure/press"+(n), Pressure))
+    {
+      Serial.println("PASSED");
+      Serial.println("PATH: " + firebaseData.dataPath());
+      Serial.println("TYPE: " + firebaseData.dataType());
+      Serial.println("------------------------------------");
+      Serial.println();
+    }
+    else
+    {
+      Serial.println("FAILED");
+      Serial.println("REASON: " + firebaseData.errorReason());
+      Serial.println("------------------------------------");
+      Serial.println();
+    }
+    
+}
+
+/*------------------------------------------------------Update raindrop sensor data UDF----------------------------------*/
+void sensorRainUpdate(char* r)
+{
+    stringOne= r;
+    stringOne += ":  It is Raining";
+    
+    if (valRain == LOW){
+      if (Firebase.setString(firebaseData, path+ "/precipitation", stringOne))
+      {
+        Serial.println("PASSED");
+        Serial.println("PATH: " + firebaseData.dataPath());
+        Serial.println("TYPE: " + firebaseData.dataType());
+        Serial.println("------------------------------------");
+        Serial.println();
+      }
+      else
+      {
+        Serial.println("FAILED");
+        Serial.println("REASON: " + firebaseData.errorReason());
+        Serial.println("------------------------------------");
+        Serial.println();
+      }
+    }
+    
+}
+
+/*------------------------------------------------------send average temperature to firebase UDF----------------------------------*/
+void avgTempfun(void)
+{
+  int sum = 0;
+  int avgTemp = 0;
+  int i;
+  int val;
+  int j;
+  for (i=1; i<=n; i++)
+  {
+    if (Firebase.getInt(firebaseData, path + "/temperature/temp" + (i))) {
+      if (firebaseData.dataType() == "int") {
+        val = firebaseData.intData();
+      }
+    } else {
+      //Failed, then print out the error detail
+      Serial.println(firebaseData.errorReason());
+    }
+    sum = sum + val;
+  }
+  
+  avgTemp = sum/n;
+  Firebase.setFloat(firebaseData, path + "/avgTemp", avgTemp);
+  
+  for (j=1; j<=n; j++)
+  {
+    Firebase.deleteNode(firebaseData, path + "/temperature/temp" + (j));
+  }
+}
+
+
+/*------------------------------------------------------Send average humidity to firebase UDF----------------------------------*/
+void avgHumfun(void)
+{
+  int sum = 0;
+  int avgHum = 0;
+  int i;
+  int val;
+  int j;
+  for (i=1; i<=n; i++)
+  {
+    if (Firebase.getInt(firebaseData, path + "/humidity/hum" + (i))) {
+      if (firebaseData.dataType() == "int") {
+        val = firebaseData.intData();
+      }
+    } else {
+      //Failed, then print out the error detail
+      Serial.println(firebaseData.errorReason());
+    }
+    sum = sum + val;
+  }
+  
+  avgHum = sum/n;
+  Firebase.setFloat(firebaseData, path + "/avgHum", avgHum);
+  
+  for (j=1; j<=n; j++)
+  {
+    Firebase.deleteNode(firebaseData, path + "/humidity/hum" + (j));
+  }
+}
+
+/*------------------------------------------------------Send average Pressure to firebase UDF----------------------------------*/
+void avgPressfun(void)
+{
+  int sum = 0;
+  int avgPress = 0;
+  int i;
+  int val;
+  int j;
+  for (i=1; i<=n; i++)
+  {
+    if (Firebase.getInt(firebaseData, path + "/Pressure/press" + (i))) {
+      if (firebaseData.dataType() == "int") {
+        val = firebaseData.intData();
+      }
+    } else {
+      //Failed, then print out the error detail
+      Serial.println(firebaseData.errorReason());
+    }
+    sum = sum + val;
+  }
+  
+  avgPress = sum/n;
+  Firebase.setFloat(firebaseData, path + "/avgPress", avgPress);
+  
+  for (j=1; j<=n; j++)
+  {
+    Firebase.deleteNode(firebaseData, path + "/pressure/press" + (j));
+  }
+}
+
+/*------------------------------------------------------Get time UDF----------------------------------*/
+void convCurrentTimeET(unsigned long currSeconds, char *currentTimeET) 
+{
+    time_t rawtime = currSeconds - 18000;
+    struct tm  ts;
+    char buf[70];
+    ts = *localtime(&rawtime);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &ts);
+    sprintf(currentTimeET, buf);
 }
