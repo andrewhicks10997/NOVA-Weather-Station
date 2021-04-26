@@ -62,6 +62,19 @@ String path = FirebasePath;
 /*_____________Setup Time Functionality*****************/
 int dd, hh, mm, ss;
 unsigned long currSeconds;
+struct tm  ts;
+int dailyPushFlag = 0;
+float humiditySum = 0; 
+float tempSum = 0; 
+float pressureSum = 0;
+float TempHigh = 0; 
+float TempLow = 0;
+float meanTemp = 0;
+int meanPressure = 0; 
+float meanHumidity = 0;
+int DidItRain = 0;
+int sampleSize = 0; 
+
 
 /*********Setting up the Email Functions***************/
 EMailSender emailSend("NOVAWeatherStation@gmail.com", "ECE508IoTWeatherStation123!");     //signing into client email (address and password)
@@ -101,36 +114,37 @@ int samples = 0;
 //*******************************************************************************************************************************
 
 /*********Setting up the UDFs***************/
-void BMP180_init(void);                                           //BMP180 sensor initialization
-void get_BMP180_Values(void);                                     //BMP180 Sensor Read
-void get_DHT22_Values(void);                                      //DHT22 Sensor Read
-void get_rain_status(void);                                       //Raindrop Sensor Read
-void GPS_init(void);                                              //initialize GPS module
-void get_GPS_Values(void);                                        //print the data from the GPS
-static void smartDelay(unsigned long ms);                         //delay function for GPS
-static void printFloat(float val, bool valid, int len, int prec); //GPS function to print float
-static void printInt(unsigned long val, bool valid, int len);     //GPS function to print integer
-static void printDateTime(TinyGPSDate &d, TinyGPSTime &t);        //GPS function to print time and date
-static void printStr(const char *str, int len);                   //GPS function to print string
-void OLED_init(void);                                             //OLED initialization function
-void updateOLED(void);                                            //Update OLED with new Data
-void displayTextOLED(String oledline[]);                          //writes values to OLED
-uint8_t WiFiConnect(const char* nSSID, const char* nPassword);    //connects to WiFi
-void Awaits();                                                    //timeout functionality for network connectivity
-void SendEmailAlert(char subject[], char contents[]);             //sends email with specified inputs
-void Calc_and_Analysis(void);                                     //calculates averages of values and analyzes them (determines if the user should be emailed)
-void FogStatus(void);                                             //returns if there is fog and the dew point temperature
-void CalcHeatIndex(void);                                         //calculates the heat index
-void WeatherAlert(void);                                          //Determines if there is a weather alert
-void ConnectFirebase(void);                                       //connects to Google Firebase
-void OffloadToFirebase(void);                                     //Offloads current data to Firebase
-void sensorDHT22Update(int n);                                    //updated DHT22 data to firebase
-void sensorBMP085Update(int n);                                   //updated BMP085 data to firebase
-void sensorRainUpdate(char* r);                                   //updated Raindrop sensor value
-void avgTempfun(void);                                            //averages temperatures recorded and sends to firebase
-void avgHumfun(void);                                             //averages humidity recorded and sends to firebase
-void avgPressfun(void);                                           //averages pressure recorded and sends to firebase
-
+void BMP180_init(void);                                                 //BMP180 sensor initialization
+void get_BMP180_Values(void);                                           //BMP180 Sensor Read
+void get_DHT22_Values(void);                                            //DHT22 Sensor Read
+void get_rain_status(void);                                             //Raindrop Sensor Read
+void GPS_init(void);                                                    //initialize GPS module
+void get_GPS_Values(void);                                              //print the data from the GPS
+static void smartDelay(unsigned long ms);                               //delay function for GPS
+static void printFloat(float val, bool valid, int len, int prec);       //GPS function to print float
+static void printInt(unsigned long val, bool valid, int len);           //GPS function to print integer
+static void printDateTime(TinyGPSDate &d, TinyGPSTime &t);              //GPS function to print time and date
+static void printStr(const char *str, int len);                         //GPS function to print string
+void OLED_init(void);                                                   //OLED initialization function
+void updateOLED(void);                                                  //Update OLED with new Data
+void displayTextOLED(String oledline[]);                                //writes values to OLED
+uint8_t WiFiConnect(const char* nSSID, const char* nPassword);          //connects to WiFi
+void Awaits();                                                          //timeout functionality for network connectivity
+void SendEmailAlert(char subject[], char contents[]);                   //sends email with specified inputs
+void Calc_and_Analysis(void);                                           //calculates averages of values and analyzes them (determines if the user should be emailed)
+void FogStatus(void);                                                   //returns if there is fog and the dew point temperature
+void CalcHeatIndex(void);                                               //calculates the heat index
+void WeatherAlert(void);                                                //Determines if there is a weather alert
+void ConnectFirebase(void);                                             //connects to Google Firebase
+void OffloadToFirebase(void);                                           //Offloads current data to Firebase
+void sensorDHT22Update(int n);                                          //updated DHT22 data to firebase
+void sensorBMP085Update(int n);                                         //updated BMP085 data to firebase
+void sensorRainUpdate(char* r);                                         //updated Raindrop sensor value
+void avgTempfun(void);                                                  //averages temperatures recorded and sends to firebase
+void avgHumfun(void);                                                   //averages humidity recorded and sends to firebase
+void avgPressfun(void);                                                 //averages pressure recorded and sends to firebase
+void convCurrentTimeET(unsigned long currSeconds, char *currentTimeET); //gets daily time and formats it to a string
+void DailyUpdateCheck(void);                                            //checks to see if a daily update should be pushed via email
 
 //*******************************************************************************************************************************
 //*******************************************************************************************************************************
@@ -144,6 +158,9 @@ void setup()
   //begin serial communication with baud rate of 9600 symbols/second
   Serial.begin(9600);
 
+  //connect to WiFi
+  WiFiConnect(NETWORK_SSID, NETWORK_PSA);
+
   //connect to the firebase
   ConnectFirebase();
 
@@ -155,6 +172,7 @@ void setup()
 
   //initialize GPS module
   GPS_init();
+
 }
 
 
@@ -181,6 +199,14 @@ void loop()
   
   OffloadToFirebase();  //Function call to upload information to the firebase
   delay(500);
+
+  //check if a daily email update should be pushed and handle statistics
+  DailyUpdateCheck();
+  delay(500);
+  
+  //delay to make intervals 5 minutes
+  delay((5*60*1000)-(8*500));
+  
 }
 
 //*******************************************************************************************************************************
@@ -808,11 +834,6 @@ void WeatherAlert(void)
   {
     RainFlag = 0;
   }
-
-
-  //if end of the day, print to user
-  
-  
 }
 
 //*******************************************************************************************************************************
@@ -1037,9 +1058,94 @@ void avgPressfun(void)
 void convCurrentTimeET(unsigned long currSeconds, char *currentTimeET) 
 {
     time_t rawtime = currSeconds - 18000;
-    struct tm  ts;
     char buf[70];
     ts = *localtime(&rawtime);
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &ts);
     sprintf(currentTimeET, buf);
+}
+
+
+/*------------------------------------------------------Daily email updates and get daily analytics UDF----------------------------------*/
+void DailyUpdateCheck(void)
+{
+  unsigned long currval = WiFi.getTime();
+  char timeString[20];
+  convCurrentTimeET(currval, timeString);
+
+  //if it is the first hour of a day and no updates have been pushed
+  if ((ts.tm_hour == 0) && (dailyPushFlag == 0))
+  {
+    //set update flag to true
+    dailyPushFlag = 1;
+
+    //calculate daily average temperature, pressure, and humidity
+    meanPressure = pressureSum/sampleSize; 
+    meanTemp = tempSum/sampleSize; 
+    meanHumidity = humiditySum/sampleSize;
+
+    //compose an string
+    char dailyUpdateString[400];
+
+    //write to the message string with the results of today's measurements
+    if (DidItRain == 1)
+    {
+      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d Pa and the average humidity was %0.2f%. It also precipitated today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
+    }
+    else
+    {
+      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d and the average humidity was %0.2f. It did not precipitate today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
+    }
+    
+    //send email 
+    SendEmailAlert("Daily Weather Update", dailyUpdateString);
+
+    //reset values
+    sampleSize = 0;
+    TempHigh = 0; 
+    TempLow = 0;
+    meanTemp = 0; 
+    meanHumidity = 0;
+    meanPressure = 0;
+    DidItRain = 0;
+    tempSum = 0; 
+    humiditySum = 0; 
+    pressureSum = 0;
+  }
+
+  //if it is not the first hour of the day
+  else
+  {
+    //reset update flag
+    if (ts.tm_hour != 0)
+    {
+      dailyPushFlag = 0;
+    }
+
+    //update sums 
+    tempSum += temperature;
+    humiditySum += humidity; 
+    pressureSum += Pressure;
+
+    //increment the sample size
+    sampleSize++;
+    
+    //update temperature high if it was reached
+    if (temperature > TempHigh)
+    {
+      TempHigh = temperature;
+    }
+
+    //update temperature low if it was reached
+    if (temperature < TempLow)
+    {
+      TempLow = temperature;
+    }
+
+    //update if it rained today
+    if ((valRain == 0) && (DidItRain == 0))
+    {
+      DidItRain = 1;
+    }
+  }
+  
 }
