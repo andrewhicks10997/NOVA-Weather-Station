@@ -12,6 +12,7 @@
 
 #include <SPI.h>                        //SPI communication library
 #include <Wire.h>                       //I2C communication library
+#include <SimpleDHT.h>                  // headers for DHT_22
 #include <Adafruit_BMP085.h>            //Library for BMP180 (Need to download zip file from here: https://github.com/adafruit/Adafruit-BMP085-Library)
 #include <TinyGPS++.h>                  //library for GPS
 #include <Adafruit_GFX.h>               //header file for OLED graphics
@@ -43,7 +44,6 @@ int Altitude = 0;
 TinyGPSPlus gps;
 
 /*********Setting up the Temp Sensor (DHT22)***************/
-#include <SimpleDHT.h> // headers for DHT_22
 int pinDHT22 = 2; //setting pin D2 for sensor
 SimpleDHT22 dht22(pinDHT22);
 float temperature = 0;
@@ -53,14 +53,12 @@ int errDHT22 = SimpleDHTErrSuccess;
 /************Setup FireBase****************************/
 FirebaseData firebaseData;
 FirebaseData ledData;
-int n = 1;
 char currentTimeET[20];
 unsigned long currMillis;
 String stringOne;
 String path = FirebasePath;
 
-/*_____________Setup Time Functionality*****************/
-int dd, hh, mm, ss;
+/************Setup Time Functionality*****************/
 unsigned long currSeconds;
 struct tm  ts;
 int dailyPushFlag = 0;
@@ -68,7 +66,7 @@ float humiditySum = 0;
 float tempSum = 0; 
 float pressureSum = 0;
 float TempHigh = 0; 
-float TempLow = 0;
+float TempLow = 10000;
 float meanTemp = 0;
 int meanPressure = 0; 
 float meanHumidity = 0;
@@ -140,10 +138,7 @@ void OffloadToFirebase(void);                                           //Offloa
 void sensorDHT22Update(int n);                                          //updated DHT22 data to firebase
 void sensorBMP085Update(int n);                                         //updated BMP085 data to firebase
 void sensorRainUpdate(char* r);                                         //updated Raindrop sensor value
-void avgTempfun(void);                                                  //averages temperatures recorded and sends to firebase
-void avgHumfun(void);                                                   //averages humidity recorded and sends to firebase
-void avgPressfun(void);                                                 //averages pressure recorded and sends to firebase
-void convCurrentTimeET(unsigned long currSeconds, char *currentTimeET); //gets daily time and formats it to a string
+void convCurrentTimeET(char *currentTimeET); //gets daily time and formats it to a string
 void DailyUpdateCheck(void);                                            //checks to see if a daily update should be pushed via email
 
 //*******************************************************************************************************************************
@@ -158,6 +153,9 @@ void setup()
   //begin serial communication with baud rate of 9600 symbols/second
   Serial.begin(9600);
 
+  //indicate via Serial Monitor that we are initializing modules
+  Serial.println("Initializing Modules: ");
+  
   //connect to WiFi
   WiFiConnect(NETWORK_SSID, NETWORK_PSA);
 
@@ -173,6 +171,8 @@ void setup()
   //initialize GPS module
   GPS_init();
 
+  //create space after initialization on Serial Monitor for more visual clarity
+  Serial.println(" ");
 }
 
 
@@ -368,6 +368,7 @@ void GPS_init(void)
 
 void get_GPS_Values(void)
 {
+  Serial.println("GPS INFO: ");
   printDateTime(gps.date, gps.time);
   printFloat(gps.location.lat(), gps.location.isValid(), 11, 0);  //change this to 5
   printFloat(gps.location.lng(), gps.location.isValid(), 12, 0);  //change this to 5
@@ -378,7 +379,11 @@ void get_GPS_Values(void)
   smartDelay(1000);
 
   if (millis() > 5000 && gps.charsProcessed() < 10)
+  {
     Serial.println(F("No GPS data received: check wiring"));
+  }
+
+  Serial.println(" ");
 }
 
 /*----------------------------------------------------GPS delay UDF---------------------------------------------------------*/
@@ -851,25 +856,14 @@ void ConnectFirebase(void)
 /*------------------------------------------------------Firebase data offload UDF----------------------------------*/
 void OffloadToFirebase(void) 
 {
+  convCurrentTimeET(currentTimeET);
 
-  currSeconds = WiFi.getTime();
-  convCurrentTimeET(currSeconds, currentTimeET);
-
+  Serial.println("FIREBASE INFO:");
+  Serial.println(" ");
+  
   sensorDHT22Update(currentTimeET);
   sensorBMP085Update(currentTimeET);
   sensorRainUpdate(currentTimeET);
-
-//  if (n<=10)
-//  {
-//     n++;
-//  }
-//  else
-//  {
-//      avgTempfun();
-//      avgHumfun();
-//      avgPressfun();
-//      n=1;
-//  }
 }
 
 /*------------------------------------------------------Update DHT22 data UDF----------------------------------*/
@@ -956,97 +950,6 @@ void sensorRainUpdate(char* r)
     
 }
 
-/*------------------------------------------------------send average temperature to firebase UDF----------------------------------*/
-void avgTempfun(void)
-{
-  int sum = 0;
-  int avgTemp = 0;
-  int i;
-  int val;
-  int j;
-  for (i=1; i<=n; i++)
-  {
-    if (Firebase.getInt(firebaseData, path + "/temperature/temp" + (i))) {
-      if (firebaseData.dataType() == "int") {
-        val = firebaseData.intData();
-      }
-    } else {
-      //Failed, then print out the error detail
-      Serial.println(firebaseData.errorReason());
-    }
-    sum = sum + val;
-  }
-  
-  avgTemp = sum/n;
-  Firebase.setFloat(firebaseData, path + "/avgTemp", avgTemp);
-  
-  for (j=1; j<=n; j++)
-  {
-    Firebase.deleteNode(firebaseData, path + "/temperature/temp" + (j));
-  }
-}
-
-
-/*------------------------------------------------------Send average humidity to firebase UDF----------------------------------*/
-void avgHumfun(void)
-{
-  int sum = 0;
-  int avgHum = 0;
-  int i;
-  int val;
-  int j;
-  for (i=1; i<=n; i++)
-  {
-    if (Firebase.getInt(firebaseData, path + "/humidity/hum" + (i))) {
-      if (firebaseData.dataType() == "int") {
-        val = firebaseData.intData();
-      }
-    } else {
-      //Failed, then print out the error detail
-      Serial.println(firebaseData.errorReason());
-    }
-    sum = sum + val;
-  }
-  
-  avgHum = sum/n;
-  Firebase.setFloat(firebaseData, path + "/avgHum", avgHum);
-  
-  for (j=1; j<=n; j++)
-  {
-    Firebase.deleteNode(firebaseData, path + "/humidity/hum" + (j));
-  }
-}
-
-/*------------------------------------------------------Send average Pressure to firebase UDF----------------------------------*/
-void avgPressfun(void)
-{
-  int sum = 0;
-  int avgPress = 0;
-  int i;
-  int val;
-  int j;
-  for (i=1; i<=n; i++)
-  {
-    if (Firebase.getInt(firebaseData, path + "/Pressure/press" + (i))) {
-      if (firebaseData.dataType() == "int") {
-        val = firebaseData.intData();
-      }
-    } else {
-      //Failed, then print out the error detail
-      Serial.println(firebaseData.errorReason());
-    }
-    sum = sum + val;
-  }
-  
-  avgPress = sum/n;
-  Firebase.setFloat(firebaseData, path + "/avgPress", avgPress);
-  
-  for (j=1; j<=n; j++)
-  {
-    Firebase.deleteNode(firebaseData, path + "/pressure/press" + (j));
-  }
-}
-
 //*******************************************************************************************************************************
 //*******************************************************************************************************************************
 //**************************************************** Time Functions ***********************************************************
@@ -1054,8 +957,9 @@ void avgPressfun(void)
 //*******************************************************************************************************************************
 
 /*------------------------------------------------------Get time UDF----------------------------------*/
-void convCurrentTimeET(unsigned long currSeconds, char *currentTimeET) 
+void convCurrentTimeET(char *currentTimeET) 
 {
+    currSeconds = WiFi.getTime();
     time_t rawtime = currSeconds - 18000;
     char buf[70];
     ts = *localtime(&rawtime);
@@ -1067,9 +971,8 @@ void convCurrentTimeET(unsigned long currSeconds, char *currentTimeET)
 /*------------------------------------------------------Daily email updates and get daily analytics UDF----------------------------------*/
 void DailyUpdateCheck(void)
 {
-  unsigned long currval = WiFi.getTime();
   char timeString[20];
-  convCurrentTimeET(currval, timeString);
+  convCurrentTimeET(timeString);
 
   //if it is the first hour of a day and no updates have been pushed
   if ((ts.tm_hour == 0) && (dailyPushFlag == 0))
@@ -1092,7 +995,7 @@ void DailyUpdateCheck(void)
     }
     else
     {
-      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d and the average humidity was %0.2f. It did not precipitate today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
+      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d Pa and the average humidity was %0.2f%. It did not precipitate today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
     }
     
     //send email 
@@ -1101,7 +1004,7 @@ void DailyUpdateCheck(void)
     //reset values
     sampleSize = 0;
     TempHigh = 0; 
-    TempLow = 0;
+    TempLow = 10000;
     meanTemp = 0; 
     meanHumidity = 0;
     meanPressure = 0;
@@ -1135,7 +1038,7 @@ void DailyUpdateCheck(void)
     }
 
     //update temperature low if it was reached
-    if (temperature < TempLow)
+    if (temperature <= TempLow)
     {
       TempLow = temperature;
     }
