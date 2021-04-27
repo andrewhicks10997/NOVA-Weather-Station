@@ -206,7 +206,6 @@ void loop()
   
   //delay to make intervals 5 minutes
   delay((5*60*1000)-(8*500));
-  
 }
 
 //*******************************************************************************************************************************
@@ -852,31 +851,31 @@ void ConnectFirebase(void)
 /*------------------------------------------------------Firebase data offload UDF----------------------------------*/
 void OffloadToFirebase(void) 
 {
-  sensorDHT22Update(n);
-  sensorBMP085Update(n);
 
   currSeconds = WiFi.getTime();
   convCurrentTimeET(currSeconds, currentTimeET);
 
+  sensorDHT22Update(currentTimeET);
+  sensorBMP085Update(currentTimeET);
   sensorRainUpdate(currentTimeET);
 
-  if (n<=10)
-  {
-     n++;
-  }
-  else
-  {
-      avgTempfun();
-      avgHumfun();
-      avgPressfun();
-      n=1;
-  }
+//  if (n<=10)
+//  {
+//     n++;
+//  }
+//  else
+//  {
+//      avgTempfun();
+//      avgHumfun();
+//      avgPressfun();
+//      n=1;
+//  }
 }
 
 /*------------------------------------------------------Update DHT22 data UDF----------------------------------*/
-void sensorDHT22Update(int n)
+void sensorDHT22Update(char* r)
 {
-    if (Firebase.setInt(firebaseData, path + "/temperature/temp" + (n), temperature))
+    if (Firebase.setInt(firebaseData, path + "/Temperature/Time: " + r, temperature))
     {
       Serial.println("PASSED");
       Serial.println("PATH: " + firebaseData.dataPath());
@@ -893,7 +892,7 @@ void sensorDHT22Update(int n)
     }
   
 
-  if (Firebase.setInt(firebaseData, path+ "/humidity/hum"+(n), humidity))
+  if (Firebase.setInt(firebaseData, path+ "/Humidity/Time: " + r, humidity))
   {
     Serial.println("PASSED");
     Serial.println("PATH: " + firebaseData.dataPath());
@@ -911,9 +910,9 @@ void sensorDHT22Update(int n)
 }
 
 /*------------------------------------------------------Update BMP085 data UDF----------------------------------*/
-void sensorBMP085Update(int n)
+void sensorBMP085Update(char* r)
 {
-    if (Firebase.setInt(firebaseData, path+ "/Pressure/press"+(n), Pressure))
+    if (Firebase.setInt(firebaseData, path+ "/Pressure/Time: " + r, Pressure))
     {
       Serial.println("PASSED");
       Serial.println("PATH: " + firebaseData.dataPath());
@@ -938,7 +937,7 @@ void sensorRainUpdate(char* r)
     stringOne += ":  It is Raining";
     
     if (valRain == LOW){
-      if (Firebase.setString(firebaseData, path+ "/precipitation", stringOne))
+      if (Firebase.setString(firebaseData, path+ "/Precipitation", stringOne))
       {
         Serial.println("PASSED");
         Serial.println("PATH: " + firebaseData.dataPath());
