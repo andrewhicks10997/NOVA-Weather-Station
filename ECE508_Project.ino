@@ -52,9 +52,7 @@ int errDHT22 = SimpleDHTErrSuccess;
 
 /************Setup FireBase****************************/
 FirebaseData firebaseData;
-FirebaseData ledData;
 char currentTimeET[20];
-unsigned long currMillis;
 String stringOne;
 String path = FirebasePath;
 
