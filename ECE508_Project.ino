@@ -989,11 +989,11 @@ void DailyUpdateCheck(void)
     //write to the message string with the results of today's measurements
     if (DidItRain == 1)
     {
-      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d Pa and the average humidity was %0.2f%. It also precipitated today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
+      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d Pa and the average humidity was %0.2f %. It also precipitated today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
     }
     else
     {
-      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d Pa and the average humidity was %0.2f%. It did not precipitate today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
+      sprintf(dailyUpdateString, "The average temperature today was %0.2f C with a high of %0.2f C and a low of %0.2f C. The average presssure was %d Pa and the average humidity was %0.2f %. It did not precipitate today.", meanTemp, TempHigh, TempLow, meanPressure, meanHumidity);
     }
     
     //send email 
