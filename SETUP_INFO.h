@@ -8,6 +8,5 @@
 #define RecipientsSize 2                                                        //array size
 
 /*--------------------------------FIREBASE INFORMATION----------------------------------------------*/
-#define FirebasePath "/NOVA_Weather_Station_x"                                  //weather station x name (x is the number of your station) 
 #define FIREBASE_HOST "ece508-weatherstation-default-rtdb.firebaseio.com"       //host location
 #define FIREBASE_AUTH "LqokKpNxTtrTxz160a64aOPiZRe8ht0BiqMMItKe"                //host auth code 

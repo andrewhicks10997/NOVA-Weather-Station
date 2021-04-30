@@ -54,7 +54,8 @@ int errDHT22 = SimpleDHTErrSuccess;
 FirebaseData firebaseData;
 char currentTimeET[20];
 String stringOne;
-String path = FirebasePath;
+String path = "";
+byte mac[6];
 
 /************Setup Time Functionality*****************/
 unsigned long currSeconds;
@@ -300,7 +301,6 @@ void get_DHT22_Values(void)
   Serial.println(humidity);
   Serial.println();
   delay(500);
-  
   
 }
 
@@ -592,7 +592,8 @@ uint8_t WiFiConnect(const char* nSSID = nullptr, const char* nPassword = nullptr
 {
     static uint16_t attempt = 0;
     Serial.print("Connecting to ");
-    if(nSSID) {
+    if(nSSID) 
+    {
         WiFi.begin(nSSID, nPassword);
         Serial.println(nSSID);
     }
@@ -615,6 +616,23 @@ uint8_t WiFiConnect(const char* nSSID = nullptr, const char* nPassword = nullptr
     Serial.println("Connection: ESTABLISHED");
     Serial.print("Got IP address: ");
     Serial.println(WiFi.localIP());
+
+    //get MAC 
+    path = "";
+    WiFi.macAddress(mac);
+    for (int i = 5; i >= 0; i--) 
+    {
+      if (mac[i] < 16) 
+      {
+        path = path + "0";  
+      }
+      path = path + String(mac[i], HEX);
+      if (i > 0) 
+      {
+        path = path + ":";
+      }
+    }
+    Serial.println("MAC: " + path);
     return true;
 }
 
